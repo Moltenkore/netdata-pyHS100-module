@@ -5,13 +5,14 @@
 
 from bases.FrameworkServices.SimpleService import SimpleService
 from pyHS100 import Discover
-from threading import Thread
+from threading import Thread, Lock
 
 priority = 90000
 update_every = 1
 
 # Discovery new devices every 10 minutes
 DISCOVERY_INTERVAL = 10 * 60
+LOCK = Lock()
 
 ORDER = [
     'current',
@@ -82,7 +83,9 @@ def update_chart(obj, chart_name, dim_id, option, device, device_data, data):
 
 def do_discovery(obj):
     obj.devices = Discover.discover()
+    LOCK.acquire()
     obj.emeters = get_all_emeters(obj.devices)
+    LOCK.release()
 
 
 def do_async_discovery(obj):
@@ -96,6 +99,7 @@ class Service(SimpleService):
         self.fake_name = 'Power'
         self.order = ORDER
         self.definitions = CHARTS
+        self.checked = False
         do_discovery(self)
 
     def check(self):
@@ -105,14 +109,16 @@ class Service(SimpleService):
         if len(self.emeters) < 1:
             self.error('No devices with emeters found.')
             return False
+        self.checked = True
         return True
 
     def get_data(self):
-        if self.runs_counter % DISCOVERY_INTERVAL == 0:
+        if self.checked and self.runs_counter % DISCOVERY_INTERVAL == 0:
             do_async_discovery(self)
 
         data = dict()
 
+        LOCK.acquire()
         for device in self.emeters:
             rt = device.get_emeter_realtime()
             dim_id = device.host
@@ -120,5 +126,5 @@ class Service(SimpleService):
             update_chart(self, 'current', dim_id + '_current', 'current', device, rt, data)
             update_chart(self, 'voltage', dim_id + '_voltage', 'voltage', device, rt, data)
             update_chart(self, 'power', dim_id + '_power', 'power', device, rt, data)
-
+        LOCK.release()
         return data
