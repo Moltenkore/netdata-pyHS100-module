@@ -90,6 +90,7 @@ def do_discovery(obj):
 
 def do_async_discovery(obj):
     thread = Thread(target=do_discovery, args=[obj])
+    thread.daemon = True
     thread.start()
 
 
