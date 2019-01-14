@@ -21,36 +21,27 @@ ORDER = [
 
 CHARTS = {
     'current': {
-        'options': [None, 'Current', 'amps', 'devices', 'power.current', 'line'],
+        'options': [None, 'Current', 'amps', 'devices', 'smartplugpower.current', 'line'],
         'lines': [
             # ['current', 'apms', 'absolute', 1, 1000]
         ]
     },
 
     'voltage': {
-        'options': [None, 'Voltage', 'volts', 'devices', 'power.voltage', 'line'],
+        'options': [None, 'Voltage', 'volts', 'devices', 'smartplugpower.voltage', 'line'],
         'lines': [
             # ['voltage', 'volts', 'absolute', 1, 1000]
         ]
     },
 
     'power': {
-        'options': [None, 'Power', 'watts', 'devices', 'power.power', 'line'],
+        'options': [None, 'Power', 'watts', 'devices', 'smartplugpower.power', 'line'],
         'lines': [
             # ['power', 'watts', 'absolute', 1, 1000]
         ]
     },
 
 }
-
-
-def get_all_emeters(devices):
-    arr = []
-    for device in devices:
-        device = devices.get(device)
-        if (device.has_emeter):
-            arr.append(device)
-    return arr
 
 # >>> d = Discover.discover()
 
@@ -70,6 +61,15 @@ def get_all_emeters(devices):
 
 # >>> plug.get_emeter_realtime().get("power")
 # 87.715957
+
+
+def get_all_emeters(devices):
+    arr = []
+    for device in devices:
+        device = devices.get(device)
+        if (device.has_emeter):
+            arr.append(device)
+    return arr
 
 
 def update_chart(obj, chart_name, dim_id, option, device, device_data, data):
