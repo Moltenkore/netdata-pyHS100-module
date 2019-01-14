@@ -5,6 +5,7 @@
 
 from bases.FrameworkServices.SimpleService import SimpleService
 from pyHS100 import Discover
+from threading import Thread
 
 priority = 90000
 update_every = 1
@@ -79,17 +80,23 @@ def update_chart(obj, chart_name, dim_id, option, device, device_data, data):
     return data
 
 
+def do_discovery(obj):
+    obj.devices = Discover.discover()
+    obj.emeters = get_all_emeters(obj.devices)
+
+
+def do_async_discovery(obj):
+    thread = Thread(target=do_discovery, args=[obj])
+    thread.start()
+
+
 class Service(SimpleService):
     def __init__(self, configuration=None, name=None):
         SimpleService.__init__(self, configuration=configuration, name=name)
         self.fake_name = 'Power'
         self.order = ORDER
         self.definitions = CHARTS
-        self.do_discovery()
-
-    def do_discovery(self):
-        self.devices = Discover.discover()
-        self.emeters = get_all_emeters(self.devices)
+        do_discovery(self)
 
     def check(self):
         if len(self.devices.keys()) < 1:
@@ -102,7 +109,7 @@ class Service(SimpleService):
 
     def get_data(self):
         if self.runs_counter % DISCOVERY_INTERVAL == 0:
-            self.do_discovery()
+            do_async_discovery(self)
 
         data = dict()
 
