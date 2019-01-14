@@ -15,6 +15,6 @@ Uses the [pyHS100](https://github.com/GadgetReactor/pyHS100) library.
 2. Install the requirements using ``pip install -r requirements.txt``
 3. Install some additional pip stuff ``pip install pytest pytest-cov voluptuous typing``
 4. Install the pyHS100 library ``python setup.py install``
-5. Download ``smart-plug-power.chart.py`` and put it into ``/usr/libexec/netdata/plugins.d``
+5. Download ``smart-plug-power.chart.py`` and put it into ``/usr/libexec/netdata/python.d/``
 6. Restart netdata ``service netdata restart``
 7. After a few refreshes you should see a ``Power`` section appear in Netdata.
