@@ -9,6 +9,9 @@ from pyHS100 import Discover
 priority = 90000
 update_every = 1
 
+# Discovery new devices every 10 minutes
+DISCOVERY_INTERVAL = 10 * 60
+
 ORDER = [
     'current',
     'voltage',
@@ -82,6 +85,9 @@ class Service(SimpleService):
         self.fake_name = 'Power'
         self.order = ORDER
         self.definitions = CHARTS
+        self.do_discovery()
+
+    def do_discovery(self):
         self.devices = Discover.discover()
         self.emeters = get_all_emeters(self.devices)
 
@@ -95,14 +101,17 @@ class Service(SimpleService):
         return True
 
     def get_data(self):
+        if self.runs_counter % DISCOVERY_INTERVAL == 0:
+            self.do_discovery()
+
         data = dict()
 
         for device in self.emeters:
             rt = device.get_emeter_realtime()
             dim_id = device.host
 
-            data = update_chart(self, 'current', dim_id + '_current', 'current', device, rt, data)
-            data = update_chart(self, 'voltage', dim_id + '_voltage', 'voltage', device, rt, data)
-            data = update_chart(self, 'power', dim_id + '_power', 'power', device, rt, data)
+            update_chart(self, 'current', dim_id + '_current', 'current', device, rt, data)
+            update_chart(self, 'voltage', dim_id + '_voltage', 'voltage', device, rt, data)
+            update_chart(self, 'power', dim_id + '_power', 'power', device, rt, data)
 
         return data
