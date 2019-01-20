@@ -120,12 +120,17 @@ class Service(SimpleService):
         data = dict()
 
         LOCK.acquire()
-        for device in self.emeters:
-            rt = device.get_emeter_realtime()
-            dim_id = device.host
+        if len(self.emeters) > 0:
+            for device in self.emeters:
+                try:
+                    rt = device.get_emeter_realtime()
+                    dim_id = device.host
 
-            update_chart(self, 'current', dim_id + '_current', 'current', device, rt, data)
-            update_chart(self, 'voltage', dim_id + '_voltage', 'voltage', device, rt, data)
-            update_chart(self, 'power', dim_id + '_power', 'power', device, rt, data)
+                    update_chart(self, 'current', dim_id + '_current', 'current', device, rt, data)
+                    update_chart(self, 'voltage', dim_id + '_voltage', 'voltage', device, rt, data)
+                    update_chart(self, 'power', dim_id + '_power', 'power', device, rt, data)
+                except Exception as e:
+                    self.error('Something went wrong: ' + str(e))
+                    do_discovery(self)
         LOCK.release()
         return data
