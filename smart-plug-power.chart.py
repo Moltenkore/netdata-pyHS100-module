@@ -84,7 +84,8 @@ def update_chart(obj, chart_name, dim_id, option, device, device_data, data):
 def do_discovery(obj):
     obj.devices = Discover.discover()
     LOCK.acquire()
-    obj.emeters = get_all_emeters(obj.devices)
+    if len(obj.devices) > 0:
+        obj.emeters = get_all_emeters(obj.devices)
     LOCK.release()
 
 
@@ -131,6 +132,7 @@ class Service(SimpleService):
                     update_chart(self, 'power', dim_id + '_power', 'power', device, rt, data)
                 except Exception as e:
                     self.error('Something went wrong: ' + str(e))
-                    do_discovery(self)
+        else:
+            do_discovery(self)
         LOCK.release()
         return data
