@@ -10,8 +10,6 @@ from threading import Thread, Lock
 priority = 90000
 update_every = 1
 
-# Discovery new devices every 10 minutes
-DISCOVERY_INTERVAL = 10 * 60
 LOCK = Lock()
 
 ORDER = [
@@ -80,6 +78,7 @@ class Service(SimpleService):
         self.definitions = CHARTS
         self.checked = False
         self.config_devices = configuration.get('devices')
+        self.config_rediscover = configuration.get('autodetection_retry')
         self.devices = None
         self.emeters = None
         self.do_discovery()
@@ -139,7 +138,9 @@ class Service(SimpleService):
         chart_data[dim_id] = device_data[measured_value]
 
     def get_data(self):
-        if self.checked and (self.runs_counter * self.update_every) % DISCOVERY_INTERVAL < self.update_every and self.config_devices is None:
+        if (self.checked and
+                self.config_rediscover and
+                (self.runs_counter * self.update_every) % self.config_rediscover < self.update_every):
             self.do_async_discovery()
 
         LOCK.acquire()
