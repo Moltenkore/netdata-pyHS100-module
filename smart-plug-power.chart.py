@@ -4,14 +4,12 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 from bases.FrameworkServices.SimpleService import SimpleService
-from pyHS100 import Discover
+from pyHS100 import Discover, EmeterStatus
 from threading import Thread, Lock
 
 priority = 90000
 update_every = 1
 
-# Discovery new devices every 10 minutes
-DISCOVERY_INTERVAL = 10 * 60
 LOCK = Lock()
 
 ORDER = [
@@ -37,9 +35,16 @@ CHARTS = {
     },
 
     'power': {
-        'options': [None, 'Power', 'watts', 'devices', 'smartplugpower.power', 'line'],
+        'options': [None, 'Power', 'watts', 'devices', 'smartplugpower.power', 'area'],
         'lines': [
             # ['power', 'watts', 'absolute', 1, 1000]
+        ]
+    },
+
+    'total': {
+        'options': [None, 'Total consumed', 'watt-hours', 'devices', 'smartplugpower.total', 'line'],
+        'lines': [
+            # ['total', 'watt-hours', 'absolute', 1, 1]
         ]
     },
 
@@ -65,36 +70,6 @@ CHARTS = {
 # 87.715957
 
 
-def get_all_emeters(devices):
-    arr = []
-    for device in devices:
-        device = devices.get(device)
-        if (device.has_emeter):
-            arr.append(device)
-    return arr
-
-
-def update_chart(obj, chart_name, dim_id, option, device, device_data, data):
-    if dim_id not in obj.charts[chart_name]:
-        obj.charts[chart_name].add_dimension([dim_id, "{0} ({1})".format(device.alias, device.host), 'absolute', 1, 1000])
-    data[dim_id] = device_data.get(option) * 1000
-    return data
-
-
-def do_discovery(obj):
-    obj.devices = Discover.discover()
-    LOCK.acquire()
-    if len(obj.devices) > 0:
-        obj.emeters = get_all_emeters(obj.devices)
-    LOCK.release()
-
-
-def do_async_discovery(obj):
-    thread = Thread(target=do_discovery, args=[obj])
-    thread.daemon = True
-    thread.start()
-
-
 class Service(SimpleService):
     def __init__(self, configuration=None, name=None):
         SimpleService.__init__(self, configuration=configuration, name=name)
@@ -102,37 +77,91 @@ class Service(SimpleService):
         self.order = ORDER
         self.definitions = CHARTS
         self.checked = False
-        do_discovery(self)
+        self.config_devices = configuration.get('devices')
+        self.config_rediscover = configuration.get('autodetection_retry')
+        self.devices = None
+        self.emeters = None
+        self.do_discovery()
 
-    def check(self):
-        if len(self.devices.keys()) < 1:
-            self.error('No devices found.')
-            return False
-        if len(self.emeters) < 1:
-            self.error('No devices with emeters found.')
-            return False
-        self.checked = True
-        return True
-
-    def get_data(self):
-        if self.checked and self.runs_counter % DISCOVERY_INTERVAL == 0:
-            do_async_discovery(self)
-
-        data = dict()
+    def do_discovery(self):
+        devices = {}
+        if self.config_devices:
+            for host in self.config_devices:
+                try:
+                    device = Discover.discover_single(host)
+                    if device:
+                        devices[host] = device
+                except Exception as e:
+                    self.error('`discover_single()` has failed for {}: {}'.format(host, str(e)))
+        else:
+            try:
+                devices = Discover.discover()
+            except Exception as e:
+                self.error('`discover()` has failed: ' + str(e))
 
         LOCK.acquire()
-        if len(self.emeters) > 0:
-            for device in self.emeters:
+        self.devices = devices
+        if self.devices:
+            self.emeters = []
+            for device in self.devices.values():
                 try:
-                    rt = device.get_emeter_realtime()
-                    dim_id = device.host
-
-                    update_chart(self, 'current', dim_id + '_current', 'current', device, rt, data)
-                    update_chart(self, 'voltage', dim_id + '_voltage', 'voltage', device, rt, data)
-                    update_chart(self, 'power', dim_id + '_power', 'power', device, rt, data)
+                    if device.has_emeter:
+                        self.emeters.append(device)
                 except Exception as e:
-                    self.error('Something went wrong: ' + str(e))
-        else:
-            do_discovery(self)
+                    self.error('`has_emeter()` has failed for {}: {}'.format(device.host, str(e)))
         LOCK.release()
-        return data
+
+    def do_async_discovery(self):
+        thread = Thread(target=self.do_discovery)
+        thread.daemon = True
+        thread.start()
+
+    def check(self):
+        if not self.devices:
+            self.error('No devices found.')
+        elif not self.emeters:
+            self.error('No devices with emeters found.')
+        else:
+            self.checked = True
+
+        return self.checked
+
+    def update_chart(self, chart_data, measured_value, device, device_data):
+        chart_name = measured_value.split('_')[0]
+        divisor = (1, 1000)[measured_value.split('_')[-1][0] == 'm']
+        dim_id = '{}_{}'.format(device.host, chart_name)
+        friendly_hostname = '{} ({})'.format(device.alias, device.host)
+
+        if dim_id not in self.charts[chart_name]:
+            self.charts[chart_name].add_dimension([dim_id, friendly_hostname, 'absolute', 1, divisor])
+
+        chart_data[dim_id] = device_data[measured_value]
+
+    def get_data(self):
+        if (self.checked and
+                self.config_rediscover and
+                (self.runs_counter * self.update_every) % self.config_rediscover < self.update_every):
+            self.do_async_discovery()
+
+        LOCK.acquire()
+        if not self.emeters:
+            LOCK.release()
+            self.do_discovery()
+        else:
+            LOCK.release()
+
+        chart_data = {}
+        LOCK.acquire()
+        for emeter in self.emeters:
+            try:
+                emeter_data = EmeterStatus(emeter.get_emeter_realtime())
+
+                self.update_chart(chart_data, 'current_ma', emeter, emeter_data)
+                self.update_chart(chart_data, 'voltage_mv', emeter, emeter_data)
+                self.update_chart(chart_data, 'power_mw',   emeter, emeter_data)
+                self.update_chart(chart_data, 'total_wh',   emeter, emeter_data)
+            except Exception as e:
+                self.error('`get_emeter_realtime()` has failed for {}: {}'.format(emeter.host, str(e)))
+        LOCK.release()
+
+        return chart_data
